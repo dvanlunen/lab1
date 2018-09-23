@@ -1,6 +1,6 @@
 ---
 title: "Statistical Methods for Discrete Response, Time Series, and Panel Data (W271): Lab 1"
-author: "Daniel Van Lunen"
+author: "Daniel Van Lunen,Aaron Olsen"
 output: 
   pdf_document:
   toc: true
@@ -15,6 +15,7 @@ library(dplyr)
 library(mcprofile)
 library(car)
 library(Hmisc)
+library(gridExtra)
 ```
 
 # Introduction
@@ -51,14 +52,16 @@ The dataset has 5 variables:
 There are no missing, top-coded, or bottom-coded values.
 
 ```{r}
-ggplot(d, aes(O.ring_factor, Temp)) +
-  geom_boxplot() + 
-  geom_jitter(height = 0) +
-  ggtitle("Distribution of Temp for each Number of Failures")
+p1 <- ggplot(d, aes(Temp, fill = factor(O.ring_binary), colour = factor(O.ring_binary))) +
+ geom_density(alpha=0.2) +
+  ggtitle("Distribution of Temperature\nfor Flights with and\n without Failures") +
+    theme(legend.position="bottom")
+p2 <- ggplot(d, aes(Temp, O.ring)) +
+ geom_point() +
+  ggtitle("Numbers of Failures (O.ring) vs.\n Temperature")
+grid.arrange(p1,p2,ncol=2)
 ```
-Temperature is skewed to the left with fewer observations for the colder temperatures we are most interested in. For launches with failures the temperature tends to be lower as can be see in the above box plots. There also appears to be one temperature that is far from the normal trend: 75 degrees with 2 failures. Given this seems completely possible due to randomness, we leave this point in the data.
-
-
+Temperature is skewed to the left with fewer observations for the colder temperatures we are most interested in. For launches with failures the temperature tends to be lower. There also appears to be one temperature that is far from the normal trend: 75 degrees with 2 failures. Given this seems completely possible due to randomness, we leave this point in the data. There is a sharp decline at approximately 65 degrees to nearly no failures above that temperature.
 
 ```{r}
 # how does the proportion of failures change with Pressure
@@ -77,11 +80,16 @@ ggplot(d, aes(Pressure.factor, Temp)) +
 ```
 Given only 3 values of pressure and only 2 data points at the value of 100, it is harder to judge the impact of pressure on O.ring failure. There are a higher proportion of failures at low pressures and high pressures so we might think this could be caused by failure to seal at low pressures and blow through at high pressures. However, it is possible it is also just explained by the temperature because the temperature on high and low pressure days tended to be lower. Thus, we will see if pressure still has an impact after accounting for temperature.
 
+
+
+
 # Modeling
 
 ## 4a Assumptions Underlying Logistic Model
 
 It is necessary to assume that each O.ring is independent in the binomial model because if the probability that on O.ring fails is dependent on whether another O.ring fails, then the total number of failures will no longer follow a binomial distribution. The assumption is necessary so the authors can use each of the 6 O.rings in each of the 23 launches as a distinct datapoint in the logisitic regression. The problem is that if one O.ring fails, it likely increases the chance that additional O.rings on the same launch will fail because the conditions were "bad" enough to make one fail so they could make others fail as well.
+
+Also detailed in the paper was the specifications for the field joint, whereby there was a primary and a backup/secondary o-ring. It is unlikely that the backup o-ring would be exposed to temperature or potential failure if the primary o-ring did not fail. This further supports an element of dependence amongst the o-ring variable. In this analysis however we consider each o-ring failure independently and assume one failure does not affect another. 
 
 ## 4b Estimate Model
 
