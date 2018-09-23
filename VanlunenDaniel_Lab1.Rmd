@@ -15,11 +15,15 @@ library(dplyr)
 library(mcprofile)
 library(car)
 library(Hmisc)
-library(GGally) # I use this package because it has good pairwise scatterplots depending on vairables types
 ```
 
 # Introduction
-An introduction section that summarize the key question being asked, the methodology employed (including the final model specification), and a highlight of the main result.
+A post-disaster investigation revealed the Challenger explosion was caused by O.ring failures. Before the launch, there was debate about whether to launch due to low temperatures. In this lab, we model the probability of O.ring failure using data from 23 launch tests to investigate the causes of failure and whether a launch at the 31 degree temperature was especially risky. Our findings indicate temperature has a significant impact on O.ring failure, while pressure does not. Our final logistic regression model is
+
+$$
+log(\frac{P(O.ring \ Failure)}{P(O.ring \ doesn't \ fail)}) =  5.08498-0.11560\times Temp 
+$$
+This yields an estimated 81.2% chance of O.ring failure with 90% bootstrapped confidence between 12.5% and 99.3% at the 31 temperature on the day of Challenger loss. This risk could have been avoided by waiting for a warmer day where we predict a much lower chance of failure. For example, at 72 degrees we predict the chance of failure between 1.0% and 6.9% degrees with 90% confidence
 
 
 # EDA
@@ -30,56 +34,109 @@ summary(d)
 describe(d)
 d$Pressure.factor <- factor(d$Pressure,levels = c(50,100,200))
 d$O.ring_binary <- factor(ifelse(d$O.ring>0,1,0))
-ggpairs(d %>% select(-Number))
+d$O.ring_factor <- factor(d$O.ring, levels = c(0,1,2))
 ```
 The dataset has 5 variables:
+
 1. Flight appears to be an index for each flight and ranges from 1 to 23. 
+
 2. Temp is the Farenheit temperature on the day of the launch
+
 3. Pressure is the psi level pressure used. It increases sequentially with the flight number as the paper mentioned they increased the pressure from 50 to 100 then 200 in their tests.
+
 4. O.ring represents the number of O.ring failures (ranges between 0 and 2)
+
 5. Number is always 6. This is the total number of O.rings.
 
-There are no missing, top-coded, or bottom-coded values. Temperature is slightly skewed to the left. It also has a positive relationship with failures as we can see by the boxplots of temperature for when there were 0 failures vs at least 1 failure: the median temperature for the no failure case is higher than the 75th percentile for the failure case. Given only 3 values of pressure and only 2 data points at the value of 100, it is harder to judge the impact of pressure on O.ring failure. The histograms of pressure values when there is a failure vs when there isn't have a similar shape.
-
-
-
-
-
-
- A comprehensive Exploratory Data Analysis (EDA) analysis, which includes both graphical and tabular analysis, as taught in this course. Output-dump (that is, graphs and tables that don't come with explanations) will result in a very low, if not zero, score. Since the report has a page-limit, you will have to be selective when choosing visuals to illustarte your key points, assocaited with a concise explanation of the visuals. Please do not ramble. Please remember that your report will have to "walk me through" your analysis.
-
-# Modeliing
-
-## 4a
-
-It is necessary to assume that each O.ring is independent in the binomial model because if the probability that on O.ring fails is dependent on whether another O.ring fails, then the total number of failures will no longer follow a binomial distribution. The assumption is necessary so the authors can use each of the 6 O.rings in each of the 23 launches as a distinct datapoint in the logisitc regression. The problem is that if one O.ring fails, it likely increases the chance that additional O.rings on the same launch will fail because the conditions were "bad" enough to make one fails so they could make others fail as well.
-
-## 4b
+There are no missing, top-coded, or bottom-coded values.
 
 ```{r}
-m4b <- glm(formula = O.ring/Number ~ Temp + Pressure, data = d, family = binomial(link = "logit"), weights = Number)
+ggplot(d, aes(O.ring_factor, Temp)) +
+  geom_boxplot() + 
+  geom_jitter(height = 0) +
+  ggtitle("Distribution of Temp for each Number of Failures")
+```
+Temperature is skewed to the left with fewer observations for the colder temperatures we are most interested in. For launches with failures the temperature tends to be lower as can be see in the above box plots. There also appears to be one temperature that is far from the normal trend: 75 degrees with 2 failures. Given this seems completely possible due to randomness, we leave this point in the data.
+
+
+
+```{r}
+# how does the proportion of failures change with Pressure
+d %>% 
+  group_by(Pressure) %>% 
+  summarise(pfailures=mean(O.ring/6))
+# how does temperature change with pressure
+ggplot(d, aes(Pressure.factor, Temp)) +
+  geom_boxplot() + 
+  geom_jitter(height = 0, colour=factor(d$O.ring+1)) +
+  ggtitle(paste0("Distribution of Temp for each Pressure by Launch\n",
+                 "Black Dots have no failures\n",
+                 "Red Dots have 1 failure\n",
+                 "Green Dots have 2 failures"))
+
+```
+Given only 3 values of pressure and only 2 data points at the value of 100, it is harder to judge the impact of pressure on O.ring failure. There are a higher proportion of failures at low pressures and high pressures so we might think this could be caused by failure to seal at low pressures and blow through at high pressures. However, it is possible it is also just explained by the temperature because the temperature on high and low pressure days tended to be lower. Thus, we will see if pressure still has an impact after accounting for temperature.
+
+# Modeling
+
+## 4a Assumptions Underlying Logistic Model
+
+It is necessary to assume that each O.ring is independent in the binomial model because if the probability that on O.ring fails is dependent on whether another O.ring fails, then the total number of failures will no longer follow a binomial distribution. The assumption is necessary so the authors can use each of the 6 O.rings in each of the 23 launches as a distinct datapoint in the logisitic regression. The problem is that if one O.ring fails, it likely increases the chance that additional O.rings on the same launch will fail because the conditions were "bad" enough to make one fail so they could make others fail as well.
+
+## 4b Estimate Model
+
+```{r}
+m4b <- glm(formula = O.ring/Number ~ Temp + Pressure, data = d,
+           family = binomial(link = "logit"), weights = Number)
 summary(m4b)
 ```
 
-## 4c
+We also estimate the model with a Pressure squared term because our EDA gives us the hypothesis that potentially middle-ground pressures are ok, but high and low are bad. 
 ```{r}
-Anova(m4b)
+m4b_psquared <- glm(formula = O.ring/Number ~ Temp + Pressure + I(Pressure^2), 
+                    data = d, family = binomial(link = "logit"), weights = Number)
+summary(m4b_psquared)
+```
+And a model with a pressure and temperature interaction because it is possible that higher temperatures are worse at higher pressures because the rings are more malleable and prone to blow through.
+```{r}
+m4b_pt <- glm(formula = O.ring/Number ~ Temp + Pressure + Pressure:Temp, 
+              data = d, family = binomial(link = "logit"), weights = Number)
+summary(m4b_pt)
 ```
 
-The leave-one-out LR tests indicate that Temperature has a significant impact on the chance of on O.ring failure. On the other hand, after accounting for temperature, Pressure does not have a significant impact. 
 
-## 4d
-
-The authors chose to remove pressure because they found it was not significantly reduce the residual deviance as the LRT above shows.\footnote{they also performed bootstraped confidence intervals on the number of incidents holding pressure constant at 50/200 for different temperatures and found they overlapped greatly.} Removing this variable could potentially bias the coefficient on temperature. Temperature and pressure have a weak positive correlation and temperature has a positive correlation with failures. If pressure also has a negative impact on failures and is left out of the model, part of its impact will be absorbed as bias in the coefficient on temperature, making it seem like temperature is less important than it actually may be in causing a failure. 
-
-## 5a
-
+And we estimate a model with just temperature for comparison.
 ```{r}
-m5a <- glm(formula = O.ring/Number ~ Temp, data = d, family = binomial(link = "logit"), weights = Number)
+m5a <- glm(formula = O.ring/Number ~ Temp, data = d, 
+           family = binomial(link = "logit"), weights = Number)
 summary(m5a)
 ```
 
-##  5b
+## 4c LRTs for variable importance
+```{r}
+# is temp or pressure signficant after accounting for the other?
+Anova(m4b)
+# is pressure and pressure^2 signficant after accounting for temp?
+anova(m5a,m4b_psquared,test = "LR") 
+# is there a significant interaction between temp and pressure
+Anova(m4b_pt) 
+```
+
+The leave-one-out LR tests indicate that Temperature has a significant impact on the chance of an O.ring failure. On the other hand, after accounting for temperature, Pressure does not have a significant impact. Even when using a higher-order or interaction term, pressure does not have a significant impact after accounting for temperature.
+
+## 4d Removing Pressure and Implications
+
+The authors chose to remove pressure because they found it did not significantly reduce the residual deviance as the LRT above shows.\footnote{they also performed bootstraped confidence intervals on the number of incidents holding pressure constant at 50/200 for different temperatures and found they overlapped greatly.} Removing this variable could potentially bias the coefficient on temperature. Temperature and pressure have a weak positive correlation and temperature has a negative correlation with failures. If pressure also has a negative impact on failures and is left out of the model, part of its impact will be absorbed as bias in the coefficient on temperature, making it seem like temperature is more important than it actually may be in causing a failure. 
+
+## 5a Estimate Model
+
+```{r}
+m5a <- glm(formula = O.ring/Number ~ Temp, data = d,
+           family = binomial(link = "logit"), weights = Number)
+summary(m5a)
+```
+
+##  5b Pihat vs Temp and Expected failures vs Temp
 Let's see how well the single covariate model lines up with the data by showing (1) the estimated probability of a failure vs. temperature and (2) the expected number of failures vs temperature in charts.
 ```{r}
 alpha <- .05
@@ -112,10 +169,11 @@ data.frame(Temp <- seq(31,81,by=1)) %>%
   ggtitle("(2) Predicted Failures vs Temp with Overlaid True Points") +
   geom_point(data=d %>% mutate(predicted_failures=O.ring))
 ```
-## 5c
+
+## 5c 95% Wald confidence bands
 The confidence bands on $pi$ are wider for lower temperatures because we do not have any data points at those low data points. The more we have to extrapolate, the less confident we will be (there is larger variance in predictions with fewer training points).
 
-## 5d
+## 5d Confidence interval at 31 degrees and assumptions
 ```{r}
 # Wald
 predict.data %>% filter(Temp==31) %>% select(Temp,pi,CI.lower.pi,CI.upper.pi)
@@ -135,58 +193,134 @@ The estimated probability of a failure at this temperature is about 81.8%. The L
 6. The model has converged to the true values of the parameters.
 7. There is no perfect colinearity of the independent variables (here this is met because we only have Temp as an indpendent variable).
 
-# 5e
-```{r}
-estimate_pi <- function(temp,model=m5a,obs=26){
-  # estimate a pi from a bootstrapped logistic regression 
-  pihat <- predict(object = m5a,
-                   newdata = data.frame(Temp=temp), 
-                   type='response')
-  bootstrap_df <- rbinom(n = obs, size = 6, prob = pihat)
-  m <- glm()
-}
-
-
-
-interest_temps <- c(31,72)
-
-
-for (temp in interest_temps){
+## 5e Parametric Bootstrap
+```{r warning=F}
+generate_pihats <- function(logisticmodel=m5a, data=d,
+                            temps=data.frame(Temp=c(31,72))){
+  # 1. Random sample of temperatures size nrow(d) from d with replacement
+  bootstrap_df <- data.frame(Temp=sample(data$Temp, size = nrow(data), replace = T),
+                             Number=6)
+  # 2. Use model to estimate pi at each of those temperatures
+  bootstrap_df$model.pi.hat <- predict(object = logisticmodel, 
+                                       newdata = bootstrap_df, type='response')
+  # 3. Using those estimated pis, make random outcomes from binom(6, pi)
+  bootstrap_df$O.ring <- rbinom(nrow(data), 6, bootstrap_df$model.pi.hat)
+  # 4. Estimate a new logistic regression with those random outcomes and temperatures
+  bootstrap_m <- glm(formula = O.ring/Number ~ Temp, data = bootstrap_df,
+                     family = binomial(link = "logit"), weights = Number)
+  # 5. Compute estimated pis at 31 and 72 degrees
+  cbind(temps,pihat=predict(object = bootstrap_m, newdata = temps, type='response'))
   
 }
+# 6. Replicate many times
+set.seed(42)
+bootstrapped_pis <- do.call("rbind", replicate(10000, generate_pihats(),simplify = F))
+# 7. Take 5th and 95th percentile of estimates for 31,72 as confidence interval
+bootstrapped_pis %>% 
+  group_by(Temp) %>% 
+  summarise(CI.lower=quantile(pihat, probs=.05),
+            CI.upper=quantile(pihat, probs=.95))
+
+# density plots to visualize
+bootstrapped_pis %>%
+  ggplot(aes(x=pihat,fill=factor(Temp))) +
+  geom_density(alpha=.3) +
+  ggtitle('Parametric Bootstrap Pihats at 31 and 72 degrees')
 
 ```
+Our parametric bootstraps indicate that we estimate the probability of failure for a given O.ring to bet between about 12.5% and 99.3% at 31 degrees and 1.0% and 6.9% at 72 degrees. Again the interval is much wider for lower temperatures where we have fewer data points. 
 
+Note in our bootstrap sometimes we get complete separation, but this just makes our estimates 0 or 1 for the predicted probabilities which drop out after using the confidence interval.
 
+## 5f is a quadratic term necessary?
+```{r}
+# empirical proportion of failures for buckets of temperatures
+d$tempbuckets <- cut(d$Temp, breaks=c(-Inf,46,53,60,67,74,Inf))
+d %>% group_by(tempbuckets) %>% 
+  summarise(empiricallogodds=log(mean(O.ring/6)/(1-mean(O.ring/6))),
+            numtotal=sum(Number)) %>%
+  ggplot(aes(x=tempbuckets,y=empiricallogodds,size=numtotal)) +
+  geom_point()
+```
 
+Plotting the empircal log odds for different buckets reveals that above a certain temperature, failures seem quite rare. There does not seem to be enough data to confirm if the relationship is quadratic from a plot like this. Let's instead use a more general case LRT to see if the term on the squared temperature is significant.
+```{r}
+# estimate new model with quadratic term
+m5f <- glm(formula = O.ring/Number ~ Temp + I(Temp^2), data = d, family = binomial(link = "logit"), weights = Number)
+Anova(m5f, test.statistic = "LR")
+```
 
-      * A modeling section that include a detailed narrative. Make sure that your audience (in this case, the professors and your classmates) can easily follow the logic of your analysis that leads to your final model.
+# Interpret final model
+After seeing that pressure, a higher order pressure term, a temperature-pressure interaction term, and a higher order temperature term all are not close to signficant, we arrive at the same final model as the authors of the paper.
+```{r}
+summary(m5a)
+exp(-5*m5a$coefficients["Temp"]) # OR multiplier for 5 degree decrease
+```
 
-          * The rationale of decisions made in your modeling, supported by sufficient empirical evidence. Use the insights generated from your EDA step to guide your modeling step, as we discussed in live sessions.
-    
-          * All the steps used to arrive at your final model; these steps must be clearly shown and explained.
+Here for every 5 degree decrease in temperature, the odds of a failure for a given O.ring increase by 78.2%. The estimated probability of failure can be seen above in the chart for 5b. Noteably, the higher temperatures have a lower probability of failure even when accounting for the confidence bands. 
+
+# What about a Linear Probability Model?
+## Estimate the model
+```{r}
+failures <- c()
+temps <- c()
+for (i in 1:nrow(d)){
+  failures <- c(failures,rep(1,d$O.ring[i]),rep(0,6-d$O.ring[i]))
+  temps <- c(temps,rep(d$Temp[i],6))
+}
+d_LPM <- data.frame(failures=failures,Temp=temps)
+LPM <- lm(failures~Temp,data = d_LPM)
+summary(LPM)
+```
+This linear probability model estimates that the probability of an O.ring failure decreases linearly with temperature. Every 5 degree decrease in temperature would increase the estimated probability of failure by 0.79% (absolute not relative change). Let's also check the linear model's assumptions.
+
+## Assumptions
+### Linear model, Random Sample, No Perfect Collinearity
+The first assumption is that the outcome is a linear function of the predictors. Though we are not placing any conditions yet on the error term, so this assumption is met, we can already see that a linear model may not be right because under this model, at temperatures above about 77.8 degrees, we predict a negative probability of failure, which does not make sense (especially given our data has data points here).
+
+The linear model assumes a random sample, which is likely incorrect here for the same reasons mentioned in the logistic regression that outcomes on a given launch are likely correlated.
+
+The no perfect collinearity assumption is met.
+
+### Zero conditional mean
+```{r}
+ggplot(LPM, aes(.fitted, .resid))+geom_point() +
+    stat_smooth(method="loess")+geom_hline(yintercept=0, col="red", linetype="dashed")+
+    xlab("Fitted values")+ylab("Residuals") +
+    ggtitle("Residual vs Fitted Plot")+theme_bw()
+```
+The residuals vs fitted value plot has confidence bands that contain zero throughout. However, there is an obvious, linearly decreasing pattern for two sets of points in the plot indicating there is some association between the error term and the fitted values. Therefore the temperature coefficient is likely biased. 
+
+### Homoskedasticity
+To get standard errors on the coefficients, we need a constant error variance.
+```{r}
+ggplot(LPM, aes(.fitted, sqrt(abs(.stdresid))))+geom_point(na.rm=TRUE)+
+    stat_smooth(method="loess", na.rm = TRUE)+xlab("Fitted Value")+
+    ylab(expression(sqrt("|Standardized residuals|")))+
+    ggtitle("Scale-Location")+theme_bw()
+```
+The Scale-Location plot reveals that the variance of the error term is clearly not constant: there is an upward trend in the variance of the residuals as the fitted values increase. Though we could use heteroskedastic-robust errors, the failure of the other assumptions makes the LPM a rough choice.
+
+### Normally Distributed Error
+To conduct hypothesis t-tests for the LPM, we need normally distributed errors.
+```{r}
+df <- data.frame(residuals=LPM$residuals)
+ggplot(df, aes(sample=residuals)) +
+    stat_qq() + stat_qq_line() +
+    xlab("Theoretical Quantiles") + ylab("Standardized Residuals") +
+    ggtitle("Normal Q-Q")
+```
+The residuals deviate significantly from the normal distribution.
+
+## Linear or Logistic?
+A logistic model is much better because it keeps the estimated probabilities within $(0,1)$ and doesn't require as many assumptions that are clearly failing with the linear model.
 
 # Conclusion
-
-A conclusion that summarize the final result with respect to the question(s) being asked and key takeaways from the analysis.
-
-
-
-\newpage
-# Investigation of the 1989 Space Shuttel Challenger Accident 
-
-1. Carefullly read the Dala et al (1989) paper (Skip Section 5).
-
-2. Answer question 4 and 5 on Chapter 2 (page 129 and 130) of Bilder and Loughin's *"Analysis of Categorical Data with R"*
-
-3. In addition to the questions in Question 4 and 5, answer the following questions:
-
-    a. Interpret the main result of your final model in terms of both odds and probability of failure 
-
-    b. With the same set of explanatory variables in your final model, estimate a linear regression model. Explain the model results; conduct model diagnostic; and assess the validity of the model assumptions.  Would you use the linear regression model or binary logistic regression in this case.  Please explain.
-
-
-
+Decision makers at NASA would have done well to have statistically modelled the probability of O.ring failure before the Challenger launch. In this lab, we found that there was a strong relationship between O.ring failure and temperature. Our find model was 
+$$
+log(\frac{P(O.ring \ Failure)}{P(O.ring \ doesn't \ fail)}) =  5.08498-0.11560\times Temp 
+$$
+This model indicates that the Challenger launch should have been delayed due to the high estimated probability of failure of the O.rings (between 12.5% and 99.3% chance of failure at the 31 temperature on chosen launch day with 90% confidence). This high estimated probability of failure could have convinced decision makers to wait until the temperature was higher. For example, until the temperature was 72 degrees where the predicted chance of failure is between 1.0% and 6.9% with 90% confidence. This could have potentially averted disaster.
 
 
 
