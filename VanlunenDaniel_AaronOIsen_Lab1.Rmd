@@ -67,7 +67,7 @@ grid.arrange(p1,p2,ncol=2)
 ```
 Temperature is skewed to the left with fewer observations for the colder temperatures we are most interested in. For launches with failures the temperature tends to be lower. There also appears to be one temperature that is far from the normal trend: 75 degrees with 2 failures. Given this seems completely possible due to randomness, we leave this point in the data. There is a sharp decline at approximately 65 degrees to nearly no failures above that temperature.
 
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 # how does the proportion of failures change with Pressure
 d %>% 
   group_by(Pressure) %>% 
@@ -93,7 +93,7 @@ cor(d$Flight, d$Pressure)
 
 Pressure did change over time (correlation - 0.84 between flight number and pressure variables). We have shown plots relating temperature, pressure and O.ring failures previously and will explore the effect (if any) pressure has on predicting O.ring failure. Thus, we will see if pressure still has an impact after accounting for temperature.
 
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 ggplot(d, aes(Flight, Temp, colour = factor(O.ring))) +
  geom_point(alpha=0.8) + 
   ggtitle("Temperature by Flight Number (sequential with time)") +
@@ -181,7 +181,7 @@ summary(m5a)
 
 ##  5b Pihat vs Temp and Expected failures vs Temp
 Let's see how well the single covariate model lines up with the data by showing (1) the estimated probability of a failure vs. temperature and (2) the expected number of failures vs temperature in charts.
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 alpha <- .05
 predict.data <- data.frame(Temp=seq(31,81,by=1))
 linear.pred <- predict(object = m5a,newdata = predict.data, type='link', se=T)
@@ -202,7 +202,7 @@ predict.data %>%
                  "with 95% Wald Confidence Bands"))
 ```
 
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 data.frame(Temp <- seq(31,81,by=1)) %>% 
   mutate(
     z=m5a$coefficients["(Intercept)"] + m5a$coefficients["Temp"]*Temp,
@@ -240,7 +240,7 @@ From the model above that only had temperature as the explanatory variable, we f
 7. There is no perfect colinearity of the independent variables (here this is met because we only have Temp as an indpendent variable).
 
 ## 5e Parametric Bootstrap
-```{r warning=F}
+```{r warning=F, fig.height = 3, fig.width = 4, fig.align = "center"}
 generate_pihats <- function(logisticmodel=m5a, data=d,
                             temps=data.frame(Temp=c(31,72))){
   # 1. Random sample of temperatures size nrow(d) from d with replacement
@@ -279,7 +279,7 @@ Our parametric bootstraps indicate that we estimate the probability of failure f
 Note in our bootstrap sometimes we get complete separation, but this just makes our estimates 0 or 1 for the predicted probabilities which drop out after using the confidence interval.
 
 ## 5f is a quadratic term necessary?
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 # empirical proportion of failures for buckets of temperatures
 d$tempbuckets <- cut(d$Temp, breaks=c(-Inf,46,53,60,67,74,Inf))
 d %>% group_by(tempbuckets) %>% 
@@ -332,7 +332,7 @@ The linear model assumes a random sample, which is likely incorrect here for the
 The no perfect collinearity assumption is met.
 
 ### Zero conditional mean
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 ggplot(LPM, aes(.fitted, .resid))+geom_point() +
     stat_smooth(method="loess")+geom_hline(yintercept=0, col="red", linetype="dashed")+
     xlab("Fitted values")+ylab("Residuals") +
@@ -342,7 +342,7 @@ The residuals vs fitted value plot has confidence bands that contain zero throug
 
 ### Homoskedasticity
 To get standard errors on the coefficients, we need a constant error variance.
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 ggplot(LPM, aes(.fitted, sqrt(abs(.stdresid))))+geom_point(na.rm=TRUE)+
     stat_smooth(method="loess", na.rm = TRUE)+xlab("Fitted Value")+
     ylab(expression(sqrt("|Standardized residuals|")))+
@@ -352,7 +352,7 @@ The Scale-Location plot reveals that the variance of the error term is clearly n
 
 ### Normally Distributed Error
 To conduct hypothesis t-tests for the LPM, we need normally distributed errors.
-```{r}
+```{r fig.height = 3, fig.width = 4, fig.align = "center"}
 df <- data.frame(residuals=LPM$residuals)
 ggplot(df, aes(sample=residuals)) +
     stat_qq() + stat_qq_line() +
