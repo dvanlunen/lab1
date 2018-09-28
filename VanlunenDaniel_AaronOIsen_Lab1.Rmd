@@ -28,6 +28,9 @@ This yields an estimated 81.2% chance of O.ring failure with 90% bootstrapped co
 
 
 # EDA
+
+We begin by loading the data and inspecting the data structure. The data is comprised of 23 shuttle launches prior to the Challenger flight. The dataset contains information pertaining to O.rings located in the solid rocket motors of the shuttle. Please refer to Dalal et. al. for a detailed explanation of the shuttle structure and O.ring locations.
+
 ```{r warning=F}
 d <- read.csv('challenger.csv')
 d %>% glimpse()
@@ -44,13 +47,13 @@ The dataset has 5 variables:
 
 2. Temp is the Farenheit temperature on the day of the launch
 
-3. Pressure is the psi level pressure used. It increases sequentially with the flight number as the paper mentioned they increased the pressure from 50 to 100 then 200 in their tests.
+3. Pressure is the psi test level pressure used. It increases sequentially with the flight number as the paper mentioned they increased the pressure from 50 to 100 then 200 in their tests.
 
-4. O.ring represents the number of O.ring failures (ranges between 0 and 2)
+4. O.ring represents the number of primary O.ring failures (ranges between 0 and 2)
 
 5. Number is always 6. This is the total number of O.rings.
 
-There are no missing, top-coded, or bottom-coded values.
+There are no missing, top-coded, or bottom-coded values. There are 23 rows of data, one for each flight. 
 
 ```{r}
 p1 <- ggplot(d, aes(Temp, fill = factor(O.ring), colour = factor(O.ring))) +
@@ -80,7 +83,15 @@ ggplot(d, aes(Pressure.factor, Temp)) +
 
 ```
 
-Given only 3 values of pressure and only 2 data points at the value of 100, it is harder to judge the impact of pressure on O.ring failure. There are a higher proportion of failures at low pressures and high pressures so we might think this could be caused by failure to seal at low pressures and blow through at high pressures. However, it is possible it is also just explained by the temperature because the temperature for tests conducted at high and low pressures had a lower mean value. Thus, we will see if pressure still has an impact after accounting for temperature.
+Given only 3 values of pressure and only 2 data points at the value of 100, it is harder to judge the impact of pressure on O.ring failure. There are a higher proportion of failures at low pressures and high pressures so we might think this could be caused by failure to seal at low pressures and blow through at high pressures. However, it is possible it is also just explained by the temperature because the temperature for tests conducted at high and low pressures had a lower mean value. 
+
+```{r}
+# Determine correlation between flight and pressure
+cor(d$Flight, d$Pressure)
+```
+
+
+Pressure did change over time (correlation - 0.84 between flight number and pressure variables). We have shown plots relating temperature, pressure and O.ring failures previously and will explore the effect (if any) pressure has on predicting O.ring failure. Thus, we will see if pressure still has an impact after accounting for temperature.
 
 ```{r}
 ggplot(d, aes(Flight, Temp, colour = factor(O.ring))) +
@@ -89,10 +100,7 @@ ggplot(d, aes(Flight, Temp, colour = factor(O.ring))) +
     theme(legend.position="bottom")
 ```
 
-While we do not have the data to determine whether or not any changes (material and or process) occurred over the course of the 23 flights, we have visualized the temperature and o-ring failure by flight number (sequential with time). Nothing stands out principally to give evidence that there was structural or otherwise bad batches of O.rings. From flight 9-14, 4 out of 6 flights had at least one o-ring failure, however the mean temperature for these flights is also lower than the mean of the entire flight dataset, and could be explained by temperature. 
-
-Pressure did change over time (correlation - 0.84 between flight number and pressure variables). We have shown plots relating temperature, pressure and O.ring failures previously and will explore the effect (if any) pressure has on predicting O.ring failure. 
-
+One assumption that we must make given the dataset is that there were no fundamental changes and/or other factors that influence the likelihood of O.ring failure. While we do not have the data to determine whether or not any changes (material and or process) occurred over the course of the 23 flights, we have visualized the temperature and O.ring failure by flight number (sequential with time). Nothing stands out principally to give evidence that there was structural or otherwise bad batches of O.rings. From flight 9-14, 4 out of 6 flights had at least one o-ring failure, however the mean temperature for these flights is also lower than the mean of the entire flight dataset, and could be explained by temperature. 
 
 
 # Modeling
@@ -101,7 +109,11 @@ Pressure did change over time (correlation - 0.84 between flight number and pres
 
 It is necessary to assume that each O.ring is independent in the binomial model because if the probability that one O.ring fails is dependent on whether another O.ring fails, then the total number of failures will no longer follow a binomial distribution. The assumption is necessary so the authors can use each of the 6 O.rings in each of the 23 launches as a distinct datapoint in the logisitic regression. The problem is that if one O.ring fails, it likely increases the chance that additional O.rings on the same launch will fail because the conditions were "bad" enough to make one fail so they could make others fail as well.
 
+Additionally, as detailed in section 2 of the Dalal paper, there are two solid rocket motors each containing three primary O.rings. If one O.ring fails and causes a structural and/or otherwise change in the conditions pertaining to O.rings in the same solide rocket motor, the likelihood of O.ring failures is no longer completely independent. Dalal did analysis pertaining to a binary model and showed that there was a large degree of similarily between the binary and binomial models - which supports the notion that O.ring failure probability was in fact independent. 
+
 ## 4b Estimate Model
+
+The original model from Dalal suggested a potential influence on O.ring failure based on both Temperature and Pressure explanatory variables. 
 
 ```{r}
 m4b <- glm(formula = O.ring/Number ~ Temp + Pressure, data = d,
@@ -122,20 +134,17 @@ m4b_pt <- glm(formula = O.ring/Number ~ Temp + Pressure + Pressure:Temp,
               data = d, family = binomial(link = "logit"), weights = Number)
 summary(m4b_pt)
 ```
-While pressure is commonly a continuous variable, in the context of this dataset, pressure  defines the pressure at which testing was conducted. As there are only three distinct values for the pressure variable, we also inspected a model including pressure as a factor level, as well as an interaction term between factor(pressure) and temperature.
+While pressure is commonly a continuous variable, in the context of this dataset, pressure  defines the pressure at which testing was conducted. As there are only three distinct values for the pressure variable, we also inspected a model including pressure as a categorical variable.
 
 ```{r}
 m4b_factorp <- glm(formula = O.ring/Number ~ Temp + Pressure.factor, 
               data = d, family = binomial(link = "logit"), weights = Number)
 summary(m4b_factorp)
 
-m4b_factorpt <- glm(formula = O.ring_binary ~ Temp + Pressure.factor + Pressure.factor:Temp, 
-              data = d, family = binomial(link = "logit"), weights = Number)
-summary(m4b_factorpt)
 ```
-For both models which include pressure (as a continuous or categorical variable), Wald statistics show with a strong likelihood, that we can reject that pressure or a pressure/temperature interaction term are statistically significant in the model. 
 
-Therefore we estimate a model with just temperature for comparison.
+For all models that include pressure (continuous or categorical), Wald statistics show no statistical signifincance for the pressure terms. We will further this analysis in section 4b using Likelihood Ratio tests. Because this analysis yeilds little evidence of significant pressure influence in the prediction of O.ring failure, we estimate a model with just temperature for comparison.
+
 ```{r}
 m5a <- glm(formula = O.ring/Number ~ Temp, data = d, 
            family = binomial(link = "logit"), weights = Number)
@@ -154,13 +163,15 @@ Anova(m4b_pt)
 
 The leave-one-out LR tests indicate that Temperature has a significant impact on the chance of an O.ring failure. This is also consitent with the Wald importance metrics from the model summary previously printed in part 4b. We see that the p-statistic for temperature is 0.0228, using a type one error rate of 0.05 we accept that temperature has a significant impact on predicting the likelihood of o.ring failure. 
 
-On the other hand, after accounting for temperature, Pressure does not have a significant impact. Even when using a higher-order or interaction term, pressure does not have a significant impact after accounting for temperature.
+On the other hand, after accounting for temperature, pressure does not have a significant impact. Even when using a higher-order or interaction term, pressure does not have a significant impact after accounting for temperature.
 
 ## 4d Removing Pressure and Implications
 
 The authors chose to remove pressure because they found it did not significantly reduce the residual deviance as the LRT above shows.\footnote{they also performed bootstraped confidence intervals on the number of incidents holding pressure constant at 50/200 for different temperatures and found they overlapped greatly.} Removing this variable could potentially bias the coefficient on temperature. Temperature and pressure have a weak positive correlation and temperature has a negative correlation with failures. If pressure also has a negative impact on failures and is left out of the model, part of its impact will be absorbed as bias in the coefficient on temperature, making it seem like temperature is more important than it actually may be in causing a failure. 
 
 ## 5a Estimate Model
+
+Using the previous analysis, we estimate a logistic regression model using temperature as the only explanatory variable. 
 
 ```{r}
 m5a <- glm(formula = O.ring/Number ~ Temp, data = d,
@@ -222,7 +233,7 @@ The estimated probability of a failure at this temperature is about 81.8%. The L
 3. The log-odds of an O.ring failure is linearly related to the Temperature.
 4. After holding temperature constant there are no other variables that affect the probability of failure. This exogeneity assumption seems tenuous, but we do not have any other variables besides pressure to place in the regression.
 
-From the model above that only had temperature as the explanatory variable, we found the residual deviance to be 18.09. 
+From the model above that only had temperature as the explanatory variable, we found the residual deviance to be 18.09, a ~25% decrease compared to the null deviance value. This does support the possibility that there may be other variables that effect O.ring probability of failure, however with the limited dataset we will move forward with this assumption and model.
 
 5. The sample is large enough that the estimated linear combination of coefficients is normal (for Wald) or $-2log(LR) \sim \chi^2$ (for the profile interval).
 6. The model has converged to the true values of the parameters.
@@ -353,61 +364,6 @@ The residuals deviate significantly from the normal distribution.
 ## Linear or Logistic?
 A logistic model is much better because it keeps the estimated probabilities within $(0,1)$ and doesn't require as many assumptions that are clearly failing with the linear model.
 
-## Original analysis prior to launch vs Dalal
-When preparing for launch the authors detailed that the analysis conducted in order to determine whether the forecast low tempearture would affect flight success probability only focused on flights that had failed O.rings rather than including successful flights. In the interest of analysis, we have limited the dataset below to only flights that had failures and conduct fitting of a logistic regression model. 
-
-```{r}
-df_fail<- d[c(2,9,10,11,14,21,23),]
-m_original <- glm(formula = O.ring/Number ~ Temp, data = df_fail,
-           family = binomial(link = "logit"), weights = Number)
-summary(m_original)
-
-m_original_temp <- glm(formula = O.ring/Number ~ Temp + I(Temp^2), data = df_fail,
-           family = binomial(link = "logit"), weights = Number)
-summary(m_original_temp)
-```
-```{r}
-Anova(m_original)
-anova(m_original, m_original_temp, test = 'Chisq')
-```
-
-From the model, Wald and LR test statistics, we can see that none of the parameters for estimation were statistically significant. This is likely due to the limited datset (7 flights), as well as the absence of successful flights from the dataset. 
-
-```{r}
-# Wald - Using Temp^2 term
-predict.data <- data.frame(Temp = 31)
-linear.pred = predict(object = m_original_temp, newdata = predict.data, type = "link", se = TRUE)
-pi.hat = exp(linear.pred$fit)/(1+exp(linear.pred$fit))
-CI.lin.pred = linear.pred$fit + qnorm(p = c(alpha/2, 1-alpha/2))*linear.pred$se
-CI.pi = exp(CI.lin.pred)/(1+exp(CI.lin.pred))
-round(data.frame(pi.hat, lower=CI.pi[1], upper=CI.pi[1]),4)
-
-
-# LR profile
-z <- mcprofile(object = m_original_temp, CM = matrix(data = c(1, 31, 31^2), nrow=1, ncol=3))
-z.CI <- confint(object = z,level = .95)
-(pi.CI.LR.profile <- exp(z.CI$confint)/(1+exp(z.CI$confint)))
-
-# Wald - Without Temp^2 term
-predict.data <- data.frame(Temp = 31)
-linear.pred = predict(object = m_original, newdata = predict.data, type = "link", se = TRUE)
-pi.hat = exp(linear.pred$fit)/(1+exp(linear.pred$fit))
-CI.lin.pred = linear.pred$fit + qnorm(p = c(alpha/2, 1-alpha/2))*linear.pred$se
-CI.pi = exp(CI.lin.pred)/(1+exp(CI.lin.pred))
-round(data.frame(pi.hat, lower=CI.pi[1], upper=CI.pi[1]),4)
-
-
-# LR profile
-z <- mcprofile(object = m_original, CM = matrix(data = c(1, 31), nrow=1, ncol=2))
-z.CI <- confint(object = z,level = .95)
-(pi.CI.LR.profile <- exp(z.CI$confint)/(1+exp(z.CI$confint)))
-```
-
-Predicting the probability of failure at a Temperature of 31 degrees, we investigated both models with and without a quadratic temprature term. In all cases, we can see that the range in likely number of O.ring failures is nearly between the limits of a binomial distribution (0,1) -> furthermore the dataset contained no flights where teh expected value($\pi > 2/6$). This confidence interval shows that the dataset and/or determinations made from the logistic model likely aren't conclusive or valid. 
-
-Using the model $logit(\pi) = \beta_0 + \beta_1 * Temperature$ there is an expected proportion of o-rings that fail as 0.21 or between 1 and 2 O.ring failures. For the model $logit(\pi) = beta_0 + \beta_1*Temperature + \beta_2*Temperature^2$ the predicted value is nearly all O.rings failing during flight (a statistic that wasn't observed in the dataset).
-
-From this investigation utilizing a dataset comprised of only O.ring failures, we can determine that there are no meaningful results provided by either model using both confidence intervals and statisticall significance of the explanatory variable coefficients. 
 
 # Conclusion
 Decision makers at NASA would have done well to have statistically modelled the probability of O.ring failure before the Challenger launch. In this lab, we found that there was a strong relationship between O.ring failure and temperature. Our find model was 
